@@ -7,6 +7,7 @@ var WebSocket = require("ws");
 var http_port = process.env.HTTP_PORT || 3001;
 var p2p_port = process.env.P2P_PORT || 6001;
 var initialPeers = process.env.PEERS ? process.env.PEERS.split(',') : [];
+var difficulty = process.env.DIFFICULTY || 2;
 
 class Block {
     constructor(index, previousHash, timestamp, data, hash, nonce) {
@@ -96,13 +97,30 @@ var initErrorHandler = (ws) => {
     ws.on('error', () => closeConnection(ws));
 };
 
+var isValidPoW = (pow) => {
+  return (new RegExp('^[0]{' + difficulty + '}')).test(pow);
+};
+
+var generatePoW = (index, previousHash, nextTimestamp, blockData) => {
+  var hash;
+  var nonce = -1;
+  do {
+    hash = calculateHash(index, previousHash, nextTimestamp, blockData, ++nonce);
+  }
+  while (!isValidPoW(hash));
+
+  return {
+    hash: hash,
+    nonce: nonce
+  };
+};
 
 var generateNextBlock = (blockData) => {
     var previousBlock = getLatestBlock();
     var nextIndex = previousBlock.index + 1;
     var nextTimestamp = new Date().getTime() / 1000;
-    var nextHash = calculateHash(nextIndex, previousBlock.hash, nextTimestamp, blockData);
-    return new Block(nextIndex, previousBlock.hash, nextTimestamp, blockData, nextHash);
+    var pow = generatePoW(nextIndex, previousBlock.hash, nextTimestamp, blockData);
+    return new Block(nextIndex, previousBlock.hash, nextTimestamp, blockData, pow.hash, pow.nonce);
 };
 
 
