@@ -8,6 +8,7 @@ var http_port = process.env.HTTP_PORT || 3001;
 var p2p_port = process.env.P2P_PORT || 6001;
 var initialPeers = process.env.PEERS ? process.env.PEERS.split(',') : [];
 var difficulty = process.env.DIFFICULTY || 2;
+var address = process.env.ADDRESS || null;
 
 class Block {
     constructor(index, previousHash, timestamp, data, hash, nonce) {
@@ -27,6 +28,16 @@ var MessageType = {
     RESPONSE_BLOCKCHAIN: 2
 };
 
+var generateAddress = () => {
+  if (!address) {
+    address = CryptoJS.SHA256(String(process.pid) + Date.now()).toString();
+  }
+};
+
+var getAddress = () => {
+  return address;
+};
+
 var getGenesisBlock = () => {
     return new Block(0, "0", 1465154705, "my genesis block!!", "816534932c2b7154836da6afc367695e6337db8a921823784c14378abed4f7d7");
 };
@@ -38,6 +49,7 @@ var initHttpServer = () => {
     app.use(bodyParser.json());
 
     app.get('/blocks', (req, res) => res.send(JSON.stringify(blockchain)));
+    app.get('/address', (req, res) => res.send(getAddress()));
     app.post('/mineBlock', (req, res) => {
         var newBlock = generateNextBlock(req.body.data);
         addBlock(newBlock);
@@ -210,6 +222,7 @@ var isValidChain = (blockchainToValidate) => {
     return true;
 };
 
+generateAddress();
 var getLatestBlock = () => blockchain[blockchain.length - 1];
 var queryChainLengthMsg = () => ({'type': MessageType.QUERY_LATEST});
 var queryAllMsg = () => ({'type': MessageType.QUERY_ALL});
