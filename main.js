@@ -64,6 +64,26 @@ var initHttpServer = () => {
         connectToPeers([req.body.peer]);
         res.send();
     });
+
+    app.post('/turnMalicious', (req, res) => {
+        console.log('node turning malicious...');
+        var targetedBlock = blockchain[req.body.index];
+        targetedBlock.data = req.body.data;
+        blockchain[targetedBlock.index].data = targetedBlock.data;
+        var prevBlock = blockchain[targetedBlock.index -1];
+
+        for (var i = targetedBlock.index; i < blockchain.length; i++) {
+            var block = blockchain[i];
+            var pow = generatePoW(block.index, prevBlock.hash, block.timestamp, block.data);
+            block = new Block(block.index, prevBlock.hash, block.timestamp, block.data, pow.hash, pow.nonce);
+            blockchain[i] = block;
+            prevBlock = block;
+        }
+        console.log('local blockchain corrupted...');
+        broadcast({ 'type': MessageType.RESPONSE_BLOCKCHAIN, 'data': JSON.stringify(blockchain) });
+        console.log('corrrupted blockchain broadcasted');
+        res.send();
+    });
     app.listen(http_port, () => console.log('Listening http on port: ' + http_port));
 };
 
