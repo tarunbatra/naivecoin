@@ -42,7 +42,8 @@ var MessageType = {
     RESPONSE_BLOCKCHAIN: 2,
     NEW_TXNS: 3,
     QUERY_TXN: 4,
-    QUERY_ALL_TXNS: 5
+    QUERY_ALL_TXNS: 5,
+    RESPONSE_TXNS: 6
 };
 
 var generateAddress = () => {
@@ -63,7 +64,6 @@ var mineBlock = (block) => {
     var newBlock = generateNextBlock(block);
     addBlock(newBlock);
     broadcast(responseLatestMsg());
-    broadcastTxn(newBlock.data.txns[newBlock.data.txns.length - 1]);
     console.log('block added: ' + JSON.stringify(newBlock));
 };
 
@@ -81,7 +81,7 @@ var readyToMineBlock = () => {
 };
 
 var broadcastTxn = (txnHash) => {
-  broadcast({ 'type': MessageType.NEW_TXN, 'data': JSON.stringify(transactions[txnHash]) });
+  broadcast({ 'type': MessageType.NEW_TXNS, 'data': JSON.stringify({ txnHash: transactions[txnHash] }) });
 };
 
 var generateCoinbaseTxn = () => {
@@ -108,22 +108,23 @@ var calculateHashForTxn = (txn) => {
     return calculateHash(txn.from, txn.to, txn.value, txn.timestamp, '');
 };
 
-var addTransaction = (txn) => {
+var addTransaction = (txn, alreadyMined) => {
   txn.timestamp = txn.timestamp || Date.now();
   txn.hash = calculateHashForTxn(txn);
   var transaction = new Transaction(txn.from, txn.to, txn.value, txn.timestamp, txn.hash);
   if (!transactions[transaction.hash]) {
       saveTransaction(transaction);
       console.log('transaction added: ' + JSON.stringify(transaction));
-      if (isMiner) {
+      if (isMiner && !alreadyMined) {
         if (readyToMineBlock()) {
           console.log('enough transactions received');
           mineBlock(generateBlockData());
         } else {
           console.log(requiredTxnsPerBlock - pendingTransactions.length + ' more transactions required for mining');
         }
+      } else {
+        broadcastTxn(transaction.hash);
       }
-      broadcastTxn(transaction.hash);
   } else {
       console.log('duplicate transaction');
   }
@@ -205,13 +206,16 @@ var initMessageHandler = (ws) => {
                 handleBlockchainResponse(message);
                 break;
             case MessageType.NEW_TXNS:
-                handleNewTxn(message);
+                handleNewTxns(message);
                 break;
             case MessageType.QUERY_TXN:
-                write(ws, responseTxnsQuery(message));
+                handleTxnsQuery(ws, message);
                 break;
             case MessageType.QUERY_ALL_TXNS:
-                write(ws, responseTxnsQuery());
+                handleTxnsQuery(ws);
+                break;
+            case MessageType.RESPONSE_TXNS:
+                handleNewTxns(message, true);
                 break;
         }
     });
@@ -316,10 +320,10 @@ var handleBlockchainResponse = (message) => {
     }
 };
 
-var handleNewTxn = (message) => {
+var handleNewTxns = (message, alreadyMined) => {
     var newTxns = JSON.parse(message.data);
     for (var hash in newTxns) {
-        addTransaction(newTxns[hash]);
+        addTransaction(newTxns[hash], alreadyMined);
     }
 }
 
@@ -372,11 +376,20 @@ var getNewTxnsInBlock = (block) => {
     });
 };
 
-var responseTxnsQuery = (hash) => {
-  return {
-    type: MessageType.NEW_TXNS,
-    data: JSON.stringify(hash ? { hash: transactions[hash] } : transactions)
-  }
+var handleTxnsQuery = (ws, msg) => {
+    if (msg && msg.data) {
+        if (transactions[msg.data]) {
+          write(ws, {
+            type: MessageType.RESPONSE_TXNS,
+            data: JSON.stringify({ hash: transactions[msg.data] })
+          });
+        }
+    } else {
+        write(ws, {
+          type: MessageType.RESPONSE_TXNS,
+          data: JSON.stringify(transactions)
+        });
+    }
 };
 
 var write = (ws, message) => ws.send(JSON.stringify(message));
