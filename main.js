@@ -61,6 +61,7 @@ var mineBlock = (block) => {
     var newBlock = generateNextBlock(block);
     addBlock(newBlock);
     broadcast(responseLatestMsg());
+    broadcastTxn(newBlock.data.txns[newBlock.data.txns.length - 1]);
     console.log('block added: ' + JSON.stringify(newBlock));
 };
 
