@@ -40,7 +40,9 @@ var MessageType = {
     QUERY_LATEST: 0,
     QUERY_ALL: 1,
     RESPONSE_BLOCKCHAIN: 2,
-    NEW_TXN: 3
+    NEW_TXNS: 3,
+    QUERY_TXN: 4,
+    QUERY_ALL_TXNS: 5
 };
 
 var generateAddress = () => {
@@ -202,8 +204,14 @@ var initMessageHandler = (ws) => {
             case MessageType.RESPONSE_BLOCKCHAIN:
                 handleBlockchainResponse(message);
                 break;
-            case MessageType.NEW_TXN:
+            case MessageType.NEW_TXNS:
                 handleNewTxn(message);
+                break;
+            case MessageType.QUERY_TXN:
+                write(ws, responseTxnsQuery(message));
+                break;
+            case MessageType.QUERY_ALL_TXNS:
+                write(ws, responseTxnsQuery());
                 break;
         }
     });
@@ -264,7 +272,7 @@ var isValidNewBlock = (newBlock, previousBlock) => {
         console.log('invalid index');
         return false;
     } else if (previousBlock.hash !== newBlock.previousHash) {
-        console.log('invalid previoushash');
+        console.log('invalid previous hash');
         return false;
     } else if (calculateHashForBlock(newBlock) !== newBlock.hash) {
         console.log(typeof (newBlock.hash) + ' ' + typeof calculateHashForBlock(newBlock));
@@ -294,12 +302,14 @@ var handleBlockchainResponse = (message) => {
             console.log("We can append the received block to our chain");
             blockchain.push(latestBlockReceived);
             broadcast(responseLatestMsg());
+            getNewTxnsInBlock(latestBlockReceived);
         } else if (receivedBlocks.length === 1) {
             console.log("We have to query the chain from our peer");
             broadcast(queryAllMsg());
         } else {
             console.log("Received blockchain is longer than current blockchain");
             replaceChain(receivedBlocks);
+            broadcast(queryAllTxns());
         }
     } else {
         console.log('received blockchain is not longer than received blockchain. Do nothing');
@@ -307,8 +317,10 @@ var handleBlockchainResponse = (message) => {
 };
 
 var handleNewTxn = (message) => {
-  var newTxn = JSON.parse(message.data);
-  addTransaction(newTxn);
+    var newTxns = JSON.parse(message.data);
+    for (var hash in newTxns) {
+        addTransaction(newTxns[hash]);
+    }
 }
 
 var replaceChain = (newBlocks) => {
@@ -340,6 +352,8 @@ generateAddress();
 var getLatestBlock = () => blockchain[blockchain.length - 1];
 var queryChainLengthMsg = () => ({'type': MessageType.QUERY_LATEST});
 var queryAllMsg = () => ({'type': MessageType.QUERY_ALL});
+var queryAllTxns = () => ({'type': MessageType.QUERY_ALL_TXNS});
+var queryTxn = (hash) => ({'type': MessageType.QUERY_TXN, data: hash});
 var responseChainMsg = () =>({
     'type': MessageType.RESPONSE_BLOCKCHAIN, 'data': JSON.stringify(blockchain)
 });
@@ -347,6 +361,23 @@ var responseLatestMsg = () => ({
     'type': MessageType.RESPONSE_BLOCKCHAIN,
     'data': JSON.stringify([getLatestBlock()])
 });
+
+var getNewTxnsInBlock = (block) => {
+    var txns = block.data.txns;
+    txns.forEach((hash) => {
+        if (!transactions[hash]) {
+          console.log('transaction missing: ' + hash);
+          broadcast(queryTxn(hash));
+        }
+    });
+};
+
+var responseTxnsQuery = (hash) => {
+  return {
+    type: MessageType.NEW_TXNS,
+    data: JSON.stringify(hash ? { hash: transactions[hash] } : transactions)
+  }
+};
 
 var write = (ws, message) => ws.send(JSON.stringify(message));
 var broadcast = (message) => sockets.forEach(socket => write(socket, message));
