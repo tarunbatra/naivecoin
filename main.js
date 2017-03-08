@@ -127,7 +127,9 @@ var initHttpServer = () => {
     app.use(bodyParser.json());
 
     app.get('/blocks', (req, res) => res.send(JSON.stringify(blockchain)));
+    app.get('/block/:id', (req, res) => res.send(JSON.stringify(blockchain.find((block) => block.hash === req.params.id))));
     app.get('/transactions', (req, res) => res.send(JSON.stringify(transactions)));
+    app.get('/transaction/:id', (req, res) => res.send(JSON.stringify(transactions[req.params.id])));
     app.get('/address', (req, res) => res.send(getAddress()));
     app.post('/mineBlock', (req, res) => {
         mineBlock(req.body.data);
