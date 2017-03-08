@@ -77,6 +77,10 @@ var readyToMineBlock = () => {
     return pendingTransactions.length >= requiredTxnsPerBlock;
 };
 
+var broadcastTxn = (txnHash) => {
+  broadcast({ 'type': MessageType.NEW_TXN, 'data': JSON.stringify(transactions[txnHash]) });
+};
+
 var generateCoinbaseTxn = () => {
   var txnData = {
     from: null,
