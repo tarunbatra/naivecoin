@@ -206,6 +206,9 @@ var initMessageHandler = (ws) => {
             case MessageType.RESPONSE_BLOCKCHAIN:
                 handleBlockchainResponse(message);
                 break;
+            case MessageType.NEW_TXN:
+                handleNewTxn(message);
+                break;
         }
     });
 };
@@ -306,6 +309,11 @@ var handleBlockchainResponse = (message) => {
         console.log('received blockchain is not longer than received blockchain. Do nothing');
     }
 };
+
+var handleNewTxn = (message) => {
+  var newTxn = JSON.parse(message.data);
+  addTransaction(newTxn);
+}
 
 var replaceChain = (newBlocks) => {
     if (isValidChain(newBlocks) && newBlocks.length > blockchain.length) {
