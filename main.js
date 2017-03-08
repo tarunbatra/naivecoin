@@ -11,7 +11,7 @@ var difficulty = process.env.DIFFICULTY || 2;
 var address = process.env.ADDRESS || null;
 var requiredTxnsPerBlock = process.env.TXNS_PER_BLOCK || 4;
 var coinbaseReward = Number(process.env.COINBASE_REWARD) || 10;
-
+var isMiner = Boolean(process.env.MINER);
 class Block {
     constructor(index, previousHash, timestamp, data, hash, nonce) {
         this.index = index;
@@ -113,13 +113,15 @@ var addTransaction = (txn) => {
   if (!transactions[transaction.hash]) {
       saveTransaction(transaction);
       console.log('transaction added: ' + JSON.stringify(transaction));
-      broadcast({ 'type': MessageType.NEW_TXN, 'data': JSON.stringify(transaction) });
-      if (readyToMineBlock()) {
+      if (isMiner) {
+        if (readyToMineBlock()) {
           console.log('enough transactions received');
           mineBlock(generateBlockData());
-      } else {
-        console.log(requiredTxnsPerBlock - pendingTransactions.length + ' more transactions required for mining');
+        } else {
+          console.log(requiredTxnsPerBlock - pendingTransactions.length + ' more transactions required for mining');
+        }
       }
+      broadcastTxn(transaction.hash);
   } else {
       console.log('duplicate transaction');
   }
