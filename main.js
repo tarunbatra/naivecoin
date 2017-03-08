@@ -9,6 +9,7 @@ var p2p_port = process.env.P2P_PORT || 6001;
 var initialPeers = process.env.PEERS ? process.env.PEERS.split(',') : [];
 var difficulty = process.env.DIFFICULTY || 2;
 var address = process.env.ADDRESS || null;
+var requiredTxnsPerBlock = 4;
 
 class Block {
     constructor(index, previousHash, timestamp, data, hash, nonce) {
@@ -21,25 +22,87 @@ class Block {
     }
 }
 
+class Transaction {
+  constructor(from, to, value, timestamp, hash) {
+        this.from = from;
+        this.to = to;
+        this.value = value;
+        this.timestamp = timestamp;
+        this.hash = hash
+    }
+}
+
+var transactions = {};
+var pendingTransactions = [];
 var sockets = [];
 var MessageType = {
     QUERY_LATEST: 0,
     QUERY_ALL: 1,
-    RESPONSE_BLOCKCHAIN: 2
+    RESPONSE_BLOCKCHAIN: 2,
+    NEW_TXN: 3
 };
 
 var generateAddress = () => {
-  if (!address) {
-    address = CryptoJS.SHA256(String(process.pid) + Date.now()).toString();
-  }
+    if (!address) {
+        address = CryptoJS.SHA256(String(process.pid) + Date.now()).toString();
+    }
 };
 
 var getAddress = () => {
-  return address;
+    return address;
 };
 
 var getGenesisBlock = () => {
     return new Block(0, "0", 1465154705, "my genesis block!!", "816534932c2b7154836da6afc367695e6337db8a921823784c14378abed4f7d7");
+};
+
+var mineBlock = (block) => {
+    var newBlock = generateNextBlock(block);
+    addBlock(newBlock);
+    broadcast(responseLatestMsg());
+    console.log('block added: ' + JSON.stringify(newBlock));
+};
+
+var generateBlockData = () => {
+    return { txns: pendingTransactions };
+};
+
+var saveTransaction = (txn) => {
+    transactions[txn.hash] = txn;
+    pendingTransactions.push(txn.hash);
+};
+
+var readyToMineBlock = () => {
+    return pendingTransactions.length >= requiredTxnsPerBlock;
+};
+
+var generateBlockData = () => {
+    var stagedTransactions = pendingTransactions.slice(0, requiredTxnsPerBlock);
+    pendingTransactions = pendingTransactions.slice(4);
+    return { txns: stagedTransactions };
+};
+
+var calculateHashForTxn = (txn) => {
+    return calculateHash(txn.from, txn.to, txn.value, txn.timestamp, '');
+};
+
+var addTransaction = (txn) => {
+  txn.timestamp = txn.timestamp || Date.now();
+  txn.hash = calculateHashForTxn(txn);
+  var transaction = new Transaction(txn.from, txn.to, txn.value, txn.timestamp, txn.hash);
+  if (!transactions[transaction.hash]) {
+      saveTransaction(transaction);
+      console.log('transaction added: ' + JSON.stringify(transaction));
+      broadcast({ 'type': MessageType.NEW_TXN, 'data': JSON.stringify(transaction) });
+      if (readyToMineBlock()) {
+          console.log('enough transactions received');
+          mineBlock(generateBlockData());
+      } else {
+        console.log(requiredTxnsPerBlock - pendingTransactions.length + ' more transactions required for mining');
+      }
+  } else {
+      console.log('duplicate transaction');
+  }
 };
 
 var blockchain = [getGenesisBlock()];
@@ -49,12 +112,15 @@ var initHttpServer = () => {
     app.use(bodyParser.json());
 
     app.get('/blocks', (req, res) => res.send(JSON.stringify(blockchain)));
+    app.get('/transactions', (req, res) => res.send(JSON.stringify(transactions)));
     app.get('/address', (req, res) => res.send(getAddress()));
     app.post('/mineBlock', (req, res) => {
-        var newBlock = generateNextBlock(req.body.data);
-        addBlock(newBlock);
-        broadcast(responseLatestMsg());
-        console.log('block added: ' + JSON.stringify(newBlock));
+        mineBlock(req.body.data);
+        res.send();
+    });
+    app.post('/transact', (req, res) => {
+        var txnData = req.body.data;
+        addTransaction(txnData);
         res.send();
     });
     app.get('/peers', (req, res) => {
