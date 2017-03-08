@@ -9,7 +9,8 @@ var p2p_port = process.env.P2P_PORT || 6001;
 var initialPeers = process.env.PEERS ? process.env.PEERS.split(',') : [];
 var difficulty = process.env.DIFFICULTY || 2;
 var address = process.env.ADDRESS || null;
-var requiredTxnsPerBlock = 4;
+var requiredTxnsPerBlock = process.env.TXNS_PER_BLOCK || 4;
+var coinbaseReward = Number(process.env.COINBASE_REWARD) || 10;
 
 class Block {
     constructor(index, previousHash, timestamp, data, hash, nonce) {
@@ -76,9 +77,23 @@ var readyToMineBlock = () => {
     return pendingTransactions.length >= requiredTxnsPerBlock;
 };
 
+var generateCoinbaseTxn = () => {
+  var txnData = {
+    from: null,
+    to: getAddress(),
+    value: coinbaseReward,
+    timestamp: Date.now()
+  };
+  txnData.hash = calculateHashForTxn(txnData);
+  var coinbaseTxn = new Transaction(txnData.from, txnData.to, txnData.value, txnData.timestamp, txnData.hash);
+  transactions[coinbaseTxn.hash] = coinbaseTxn;
+  return coinbaseTxn;
+};
+
 var generateBlockData = () => {
     var stagedTransactions = pendingTransactions.slice(0, requiredTxnsPerBlock);
-    pendingTransactions = pendingTransactions.slice(4);
+    pendingTransactions = pendingTransactions.slice(requiredTxnsPerBlock);
+    stagedTransactions.push(generateCoinbaseTxn().hash);
     return { txns: stagedTransactions };
 };
 
