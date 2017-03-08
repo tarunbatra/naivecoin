@@ -138,10 +138,6 @@ var initHttpServer = () => {
     app.get('/transactions', (req, res) => res.send(JSON.stringify(transactions)));
     app.get('/transaction/:id', (req, res) => res.send(JSON.stringify(transactions[req.params.id])));
     app.get('/address', (req, res) => res.send(getAddress()));
-    app.post('/mineBlock', (req, res) => {
-        mineBlock(req.body.data);
-        res.send();
-    });
     app.post('/transact', (req, res) => {
         var txnData = req.body.data;
         addTransaction(txnData);
