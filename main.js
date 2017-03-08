@@ -73,7 +73,10 @@ var generateBlockData = () => {
 
 var saveTransaction = (txn) => {
     transactions[txn.hash] = txn;
-    pendingTransactions.push(txn.hash);
+};
+
+var stageTransaction = (txn) => {
+  pendingTransactions.push(txn.hash);
 };
 
 var readyToMineBlock = () => {
@@ -108,6 +111,14 @@ var calculateHashForTxn = (txn) => {
     return calculateHash(txn.from, txn.to, txn.value, txn.timestamp, '');
 };
 
+var unstageTransaction = (txnHash) => {
+    var index = pendingTransactions.indexOf(txnHash);
+    if (index > -1) {
+      pendingTransactions.splice(index);
+    }
+    console.log('transaction already mined. unstaging: ' + txnHash);
+};
+
 var addTransaction = (txn, alreadyMined) => {
   txn.timestamp = txn.timestamp || Date.now();
   txn.hash = calculateHashForTxn(txn);
@@ -115,18 +126,24 @@ var addTransaction = (txn, alreadyMined) => {
   if (!transactions[transaction.hash]) {
       saveTransaction(transaction);
       console.log('transaction added: ' + JSON.stringify(transaction));
-      if (isMiner && !alreadyMined) {
-        if (readyToMineBlock()) {
-          console.log('enough transactions received');
-          mineBlock(generateBlockData());
+      if (!alreadyMined) {
+        if (isMiner) {
+          stageTransaction(transaction);
+          if (readyToMineBlock()) {
+            console.log('enough transactions received');
+            mineBlock(generateBlockData());
+          } else {
+            console.log(requiredTxnsPerBlock - pendingTransactions.length + ' more transactions required for mining');
+          }
         } else {
-          console.log(requiredTxnsPerBlock - pendingTransactions.length + ' more transactions required for mining');
+          broadcastTxn(transaction.hash);
         }
-      } else {
-        broadcastTxn(transaction.hash);
       }
   } else {
       console.log('duplicate transaction');
+      if (alreadyMined) {
+        unstageTransaction(txn.hash);
+      }
   }
 };
 
@@ -372,6 +389,8 @@ var getNewTxnsInBlock = (block) => {
         if (!transactions[hash]) {
           console.log('transaction missing: ' + hash);
           broadcast(queryTxn(hash));
+        } else {
+          unstageTransaction(hash);
         }
     });
 };
