@@ -54,3 +54,8 @@ curl -H "Content-type:application/json" --data '{"peer" : "ws://localhost:6001"}
 ```
 curl http://localhost:3001/peers
 ```
+
+#### Try to modify data in blockchain
+```sh
+curl -H "Content-type:application/json" --data '{"index": "2", "data": "malicious data"}' http://localhost:3001/turnMalicious
+```
