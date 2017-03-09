@@ -343,7 +343,7 @@ var handleBlockchainResponse = (message) => {
       console.log("We can append the received block to our chain");
       blockchain.push(latestBlockReceived);
       broadcast(responseLatestMsg());
-      getNewTxnsInBlock(latestBlockReceived);
+      processEachTxn(latestBlockReceived);
     } else if (receivedBlocks.length === 1) {
       console.log("We have to query the chain from our peer");
       broadcast(queryAllMsg());
@@ -404,7 +404,7 @@ var responseLatestMsg = () => ({
   'data': JSON.stringify([getLatestBlock()])
 });
 
-var getNewTxnsInBlock = (block) => {
+var processEachTxn = (block) => {
   var txns = block.data.txns;
   txns.forEach((hash) => {
     if (!transactions[hash]) {
