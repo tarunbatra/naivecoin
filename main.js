@@ -188,20 +188,25 @@ var addTransaction = (txn, alreadyMined) => {
   txn.hash = calculateHashForTxn(txn);
   var transaction = new Transaction(txn.from, txn.to, txn.value, txn.timestamp, txn.hash);
   if (!Transaction.list[transaction.hash]) {
-    saveTransaction(transaction);
-    console.log('transaction added: ' + JSON.stringify(transaction));
     if (!alreadyMined) {
-      if (isMiner) {
-        stageTransaction(transaction);
-        if (readyToMineBlock()) {
-          console.log('enough transactions received');
-          mineBlock(generateBlockData());
+      if(isTransferValid(txn)) {
+        if (isMiner) {
+          saveTransaction(transaction);
+          console.log('transaction added: ' + JSON.stringify(transaction));
+          stageTransaction(transaction);
+          if (readyToMineBlock()) {
+            console.log('enough transactions received');
+            mineBlock(generateBlockData());
+          } else {
+            console.log(requiredTxnsPerBlock - Transaction.pending.length + ' more transactions required for mining');
+          }
         } else {
-          console.log(requiredTxnsPerBlock - Transaction.pending.length + ' more transactions required for mining');
-        }
-      } else {
-        broadcastTxn(transaction.hash);
+          }
       }
+    } else {
+      saveTransaction(transaction);
+      broadcastTxn(transaction.hash);
+      console.log('transaction added: ' + JSON.stringify(transaction));
     }
   } else {
     console.log('duplicate transaction');
