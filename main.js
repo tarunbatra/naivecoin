@@ -37,6 +37,7 @@ class Account {
   constructor(address, balance) {
     this.address = address || Account.generateAddress();
     this.balance = Number(balance || 0);
+    Account.list[this.address] = this;
   }
 
   getBalance() {
@@ -54,13 +55,22 @@ class Account {
   static generateAddress() {
     return CryptoJS.SHA256(String(process.pid) + Date.now()).toString();
   }
+
+  static has(address) {
+    return Boolean(Account.list[address]);
+  }
+
+  static get(address) {
+    return Account.list[address];
+  }
 }
+
+Account.list = {};
 
 var getAccount = (address) => {
   return address[address];
 };
 
-var accounts = {};
 var transactions = {};
 var pendingTransactions = [];
 var sockets = [];
@@ -175,8 +185,8 @@ var initHttpServer = () => {
   app.get('/block/:id', (req, res) => res.send(JSON.stringify(blockchain.find((block) => block.hash === req.params.id))));
   app.get('/transactions', (req, res) => res.send(JSON.stringify(transactions)));
   app.get('/transaction/:id', (req, res) => res.send(JSON.stringify(transactions[req.params.id])));
-  app.get('/accounts', (req, res) => res.send(accounts));
-  app.get('/account/:id', (req, res) => res.send(accounts[req.params.id]));
+  app.get('/accounts', (req, res) => res.send(Account.list));
+  app.get('/account/:id', (req, res) => res.send(Account.get(req.params.id)));
   app.get('/my-account', (req, res) => res.send(myAccount));
   app.post('/transact', (req, res) => {
     var txnData = req.body.data;
@@ -390,7 +400,6 @@ var isValidChain = (blockchainToValidate) => {
 };
 
 var myAccount = new Account(process.env.ADDRESS, process.env.BALANCE);
-accounts[myAccount.address] = myAccount;
 var getLatestBlock = () => blockchain[blockchain.length - 1];
 var queryChainLengthMsg = () => ({'type': MessageType.QUERY_LATEST});
 var queryAllMsg = () => ({'type': MessageType.QUERY_ALL});
