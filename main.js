@@ -26,9 +26,18 @@ class Transaction {
   constructor(from, to, value, timestamp, hash) {
     this.from = from;
     this.to = to;
-    this.value = value;
+    this.value = Number(value);
     this.timestamp = timestamp;
-    this.hash = hash
+    this.hash = hash;
+    this.applied = false;
+  }
+
+  static Apply(txn) {
+    transactions[txn.hash].applied = true;
+  }
+
+  static isApplied(txn) {
+    return transactions[txn.hash].applied;
   }
 }
 
@@ -45,11 +54,11 @@ class Account {
   }
 
   incBalance(amount) {
-    this.balance += amount;
+    this.balance += Number(amount);
   }
 
   decBalance(amount) {
-    this.balance -= amount;
+    this.balance -= Number(amount);
   }
 
   static generateAddress() {
@@ -66,10 +75,6 @@ class Account {
 }
 
 Account.list = {};
-
-var getAccount = (address) => {
-  return address[address];
-};
 
 var transactions = {};
 var pendingTransactions = [];
@@ -125,6 +130,8 @@ var generateCoinbaseTxn = () => {
   txnData.hash = calculateHashForTxn(txnData);
   var coinbaseTxn = new Transaction(txnData.from, txnData.to, txnData.value, txnData.timestamp, txnData.hash);
   transactions[coinbaseTxn.hash] = coinbaseTxn;
+  updateAccount(coinbaseTxn);
+  Transaction.Apply(coinbaseTxn);
   return coinbaseTxn;
 };
 
@@ -172,6 +179,11 @@ var addTransaction = (txn, alreadyMined) => {
     if (alreadyMined) {
       unstageTransaction(txn.hash);
     }
+  }
+
+  if (!Transaction.isApplied(txn)) {
+    updateAccount(txn);
+    Transaction.Apply(txn);
   }
 };
 
@@ -275,6 +287,20 @@ var initErrorHandler = (ws) => {
   };
   ws.on('close', () => closeConnection(ws));
   ws.on('error', () => closeConnection(ws));
+};
+
+var isTransferValid = (txn) => {
+  var sender = Account.get(txn.from);
+  return sender && sender.balance >= txn.value;
+};
+
+var updateAccount = (txn) => {
+  var sender = Account.get(txn.from);
+  var receiver = Account.get(txn.to) || new Account(txn.to);
+  if (sender) {
+    sender.decBalance(txn.value);
+  }
+  receiver.incBalance(txn.value);
 };
 
 var isValidPoW = (pow) => {
