@@ -80,7 +80,6 @@ class Account {
 Account.list = {};
 
 var blockchain = [];
-var pendingTransactions = [];
 var sockets = [];
 var MessageType = {
   QUERY_LATEST: 0,
@@ -131,7 +130,7 @@ var mineBlock = (block) => {
 };
 
 var generateBlockData = () => {
-  return { txns: pendingTransactions };
+  return { txns: Transaction.pending };
 };
 
 var saveTransaction = (txn) => {
@@ -139,11 +138,11 @@ var saveTransaction = (txn) => {
 };
 
 var stageTransaction = (txn) => {
-  pendingTransactions.push(txn.hash);
+  Transaction.pending.push(txn.hash);
 };
 
 var readyToMineBlock = () => {
-  return pendingTransactions.length >= requiredTxnsPerBlock;
+  return Transaction.pending.length >= requiredTxnsPerBlock;
 };
 
 var broadcastTxn = (txnHash) => {
@@ -166,8 +165,8 @@ var generateCoinbaseTxn = () => {
 };
 
 var generateBlockData = () => {
-  var stagedTransactions = pendingTransactions.slice(0, requiredTxnsPerBlock);
-  pendingTransactions = pendingTransactions.slice(requiredTxnsPerBlock);
+  var stagedTransactions = Transaction.pending.slice(0, requiredTxnsPerBlock);
+  Transaction.pending = Transaction.pending.slice(requiredTxnsPerBlock);
   stagedTransactions.push(generateCoinbaseTxn().hash);
   return { txns: stagedTransactions };
 };
@@ -177,9 +176,9 @@ var calculateHashForTxn = (txn) => {
 };
 
 var unstageTransaction = (txnHash) => {
-  var index = pendingTransactions.indexOf(txnHash);
+  var index = Transaction.pending.indexOf(txnHash);
   if (index > -1) {
-    pendingTransactions.splice(index);
+    Transaction.pending.splice(index);
   }
   console.log('transaction already mined. unstaging: ' + txnHash);
 };
@@ -188,7 +187,6 @@ var addTransaction = (txn, alreadyMined) => {
   txn.timestamp = txn.timestamp || Date.now();
   txn.hash = calculateHashForTxn(txn);
   var transaction = new Transaction(txn.from, txn.to, txn.value, txn.timestamp, txn.hash);
-  console.log(transaction);
   if (!Transaction.list[transaction.hash]) {
     saveTransaction(transaction);
     console.log('transaction added: ' + JSON.stringify(transaction));
@@ -199,7 +197,7 @@ var addTransaction = (txn, alreadyMined) => {
           console.log('enough transactions received');
           mineBlock(generateBlockData());
         } else {
-          console.log(requiredTxnsPerBlock - pendingTransactions.length + ' more transactions required for mining');
+          console.log(requiredTxnsPerBlock - Transaction.pending.length + ' more transactions required for mining');
         }
       } else {
         broadcastTxn(transaction.hash);
@@ -240,7 +238,7 @@ var updateAccount = (txn) => {
       sender.decBalance(txn.value);
       receiver.incBalance(txn.value);
     } else {
-      throw new Error('Sender doens\'t have enough CbCoins');
+      console.error('Sender doesn\'t have enough CbCoins');
     }
   } else {
     receiver.incBalance(txn.value);
