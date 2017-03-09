@@ -8,7 +8,6 @@ var http_port = process.env.HTTP_PORT || 3001;
 var p2p_port = process.env.P2P_PORT || 6001;
 var initialPeers = process.env.PEERS ? process.env.PEERS.split(',') : [];
 var difficulty = process.env.DIFFICULTY || 2;
-var address = process.env.ADDRESS || null;
 var requiredTxnsPerBlock = process.env.TXNS_PER_BLOCK || 4;
 var coinbaseReward = Number(process.env.COINBASE_REWARD) || 10;
 var isMiner = Boolean(process.env.MINER);
@@ -33,6 +32,35 @@ class Transaction {
   }
 }
 
+class Account {
+
+  constructor(address, balance) {
+    this.address = address || Account.generateAddress();
+    this.balance = Number(balance || 0);
+  }
+
+  getBalance() {
+    return this.balance;
+  }
+
+  incBalance(amount) {
+    this.balance += amount;
+  }
+
+  decBalance(amount) {
+    this.balance -= amount;
+  }
+
+  static generateAddress() {
+    return CryptoJS.SHA256(String(process.pid) + Date.now()).toString();
+  }
+}
+
+var getAccount = (address) => {
+  return address[address];
+};
+
+var accounts = {};
 var transactions = {};
 var pendingTransactions = [];
 var sockets = [];
@@ -44,16 +72,6 @@ var MessageType = {
   QUERY_TXN: 4,
   QUERY_ALL_TXNS: 5,
   RESPONSE_TXNS: 6
-};
-
-var generateAddress = () => {
-  if (!address) {
-    address = CryptoJS.SHA256(String(process.pid) + Date.now()).toString();
-  }
-};
-
-var getAddress = () => {
-  return address;
 };
 
 var getGenesisBlock = () => {
@@ -90,7 +108,7 @@ var broadcastTxn = (txnHash) => {
 var generateCoinbaseTxn = () => {
   var txnData = {
     from: null,
-    to: getAddress(),
+    to: myAccount.address,
     value: coinbaseReward,
     timestamp: Date.now()
   };
@@ -157,7 +175,9 @@ var initHttpServer = () => {
   app.get('/block/:id', (req, res) => res.send(JSON.stringify(blockchain.find((block) => block.hash === req.params.id))));
   app.get('/transactions', (req, res) => res.send(JSON.stringify(transactions)));
   app.get('/transaction/:id', (req, res) => res.send(JSON.stringify(transactions[req.params.id])));
-  app.get('/address', (req, res) => res.send(getAddress()));
+  app.get('/accounts', (req, res) => res.send(accounts));
+  app.get('/account/:id', (req, res) => res.send(accounts[req.params.id]));
+  app.get('/my-account', (req, res) => res.send(myAccount));
   app.post('/transact', (req, res) => {
     var txnData = req.body.data;
     addTransaction(txnData);
@@ -369,7 +389,8 @@ var isValidChain = (blockchainToValidate) => {
   return true;
 };
 
-generateAddress();
+var myAccount = new Account(process.env.ADDRESS, process.env.BALANCE);
+accounts[myAccount.address] = myAccount;
 var getLatestBlock = () => blockchain[blockchain.length - 1];
 var queryChainLengthMsg = () => ({'type': MessageType.QUERY_LATEST});
 var queryAllMsg = () => ({'type': MessageType.QUERY_ALL});
