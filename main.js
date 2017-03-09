@@ -9,7 +9,7 @@ var p2p_port = process.env.P2P_PORT || 6001;
 var initialPeers = process.env.PEERS ? process.env.PEERS.split(',') : [];
 var difficulty = process.env.DIFFICULTY || 2;
 var requiredTxnsPerBlock = process.env.TXNS_PER_BLOCK || 4;
-var coinbaseReward = Number(process.env.COINBASE_REWARD) || 10;
+var coinbaseReward = Number(process.env.COINBASE_REWARD) || 50;
 var isMiner = Boolean(process.env.MINER);
 class Block {
   constructor(index, previousHash, timestamp, data, hash, nonce) {
@@ -29,17 +29,20 @@ class Transaction {
     this.value = Number(value);
     this.timestamp = timestamp;
     this.hash = hash;
-    this.applied = false;
   }
 
   static Apply(txn) {
-    transactions[txn.hash].applied = true;
+    Transaction.applied.push(txn.hash);
   }
 
   static isApplied(txn) {
-    return transactions[txn.hash].applied;
+    return Transaction.applied.indexOf(txn.hash) > -1;
   }
 }
+
+Transaction.list = {};
+Transaction.applied = [];
+Transaction.pending = [];
 
 class Account {
 
@@ -76,7 +79,7 @@ class Account {
 
 Account.list = {};
 
-var transactions = {};
+var blockchain = [];
 var pendingTransactions = [];
 var sockets = [];
 var MessageType = {
@@ -89,8 +92,35 @@ var MessageType = {
   RESPONSE_TXNS: 6
 };
 
+var generateGenesisBlock = () => {
+  var txnData = {
+    from: null,
+    to: 'e23090a61fabced0972658ae07493e3e3e12568a3dd9e99d9da471e7bdcf90da',
+    value: 50,
+    timestamp: 1465154705
+  };
+  txnData.hash = calculateHashForTxn(txnData);
+  var genesisTransaction = new Transaction(txnData.from, txnData.to, txnData.value, txnData.timestamp, txnData.hash);
+  Transaction.list[genesisTransaction.hash] = genesisTransaction;
+  Transaction.Apply(genesisTransaction);
+  updateAccount(genesisTransaction);
+  var blockData = {
+    index: 0,
+    previousHash: '0000000000000000000000000000000000000000000000000000000000000000',
+    timestamp: 1465154705,
+    data: {
+      txns: [ genesisTransaction.hash ]
+    },
+    nonce: 0
+  };
+  blockData.hash = calculateHashForBlock(blockData);
+
+  var genesisBlock = new Block(blockData.index, blockData.previousHash, blockData.timestamp, blockData.data, blockData.hash, blockData.nonce);
+  blockchain = [ genesisBlock ];
+};
+
 var getGenesisBlock = () => {
-  return new Block(0, "0", 1465154705, "my genesis block!!", "816534932c2b7154836da6afc367695e6337db8a921823784c14378abed4f7d7");
+  return blockchain[0];
 };
 
 var mineBlock = (block) => {
@@ -105,7 +135,7 @@ var generateBlockData = () => {
 };
 
 var saveTransaction = (txn) => {
-  transactions[txn.hash] = txn;
+  Transaction.list[txn.hash] = txn;
 };
 
 var stageTransaction = (txn) => {
@@ -117,7 +147,7 @@ var readyToMineBlock = () => {
 };
 
 var broadcastTxn = (txnHash) => {
-  broadcast({ 'type': MessageType.NEW_TXNS, 'data': JSON.stringify({ txnHash: transactions[txnHash] }) });
+  broadcast({ 'type': MessageType.NEW_TXNS, 'data': JSON.stringify({ txnHash: Transaction.list[txnHash] }) });
 };
 
 var generateCoinbaseTxn = () => {
@@ -129,7 +159,7 @@ var generateCoinbaseTxn = () => {
   };
   txnData.hash = calculateHashForTxn(txnData);
   var coinbaseTxn = new Transaction(txnData.from, txnData.to, txnData.value, txnData.timestamp, txnData.hash);
-  transactions[coinbaseTxn.hash] = coinbaseTxn;
+  Transaction.list[coinbaseTxn.hash] = coinbaseTxn;
   updateAccount(coinbaseTxn);
   Transaction.Apply(coinbaseTxn);
   return coinbaseTxn;
@@ -158,7 +188,8 @@ var addTransaction = (txn, alreadyMined) => {
   txn.timestamp = txn.timestamp || Date.now();
   txn.hash = calculateHashForTxn(txn);
   var transaction = new Transaction(txn.from, txn.to, txn.value, txn.timestamp, txn.hash);
-  if (!transactions[transaction.hash]) {
+  console.log(transaction);
+  if (!Transaction.list[transaction.hash]) {
     saveTransaction(transaction);
     console.log('transaction added: ' + JSON.stringify(transaction));
     if (!alreadyMined) {
@@ -187,7 +218,36 @@ var addTransaction = (txn, alreadyMined) => {
   }
 };
 
-var blockchain = [getGenesisBlock()];
+
+var calculateHashForBlock = (block) => {
+  return calculateHash(block.index, block.previousHash, block.timestamp, block.data, block.nonce);
+};
+
+var calculateHash = (index, previousHash, timestamp, data, nonce) => {
+  return CryptoJS.SHA256(index + previousHash + timestamp + data + nonce).toString();
+};
+
+var isTransferValid = (txn) => {
+  var sender = Account.get(txn.from);
+  return sender && sender.balance >= txn.value;
+};
+
+var updateAccount = (txn) => {
+  var sender = Account.get(txn.from);
+  var receiver = Account.get(txn.to) || new Account(txn.to);
+  if (sender) {
+    if (isTransferValid(txn)) {
+      sender.decBalance(txn.value);
+      receiver.incBalance(txn.value);
+    } else {
+      throw new Error('Sender doens\'t have enough CbCoins');
+    }
+  } else {
+    receiver.incBalance(txn.value);
+  }
+};
+var myAccount = new Account(process.env.ADDRESS, process.env.BALANCE);
+generateGenesisBlock();
 
 var initHttpServer = () => {
   var app = express();
@@ -195,8 +255,8 @@ var initHttpServer = () => {
 
   app.get('/blocks', (req, res) => res.send(JSON.stringify(blockchain)));
   app.get('/block/:id', (req, res) => res.send(JSON.stringify(blockchain.find((block) => block.hash === req.params.id))));
-  app.get('/transactions', (req, res) => res.send(JSON.stringify(transactions)));
-  app.get('/transaction/:id', (req, res) => res.send(JSON.stringify(transactions[req.params.id])));
+  app.get('/transactions', (req, res) => res.send(JSON.stringify(Transaction.list)));
+  app.get('/transaction/:id', (req, res) => res.send(JSON.stringify(Transaction.list[req.params.id])));
   app.get('/accounts', (req, res) => res.send(Account.list));
   app.get('/account/:id', (req, res) => res.send(Account.get(req.params.id)));
   app.get('/my-account', (req, res) => res.send(myAccount));
@@ -289,20 +349,6 @@ var initErrorHandler = (ws) => {
   ws.on('error', () => closeConnection(ws));
 };
 
-var isTransferValid = (txn) => {
-  var sender = Account.get(txn.from);
-  return sender && sender.balance >= txn.value;
-};
-
-var updateAccount = (txn) => {
-  var sender = Account.get(txn.from);
-  var receiver = Account.get(txn.to) || new Account(txn.to);
-  if (sender) {
-    sender.decBalance(txn.value);
-  }
-  receiver.incBalance(txn.value);
-};
-
 var isValidPoW = (pow) => {
   return (new RegExp('^[0]{' + difficulty + '}')).test(pow);
 };
@@ -327,15 +373,6 @@ var generateNextBlock = (blockData) => {
   var nextTimestamp = new Date().getTime() / 1000;
   var pow = generatePoW(nextIndex, previousBlock.hash, nextTimestamp, blockData);
   return new Block(nextIndex, previousBlock.hash, nextTimestamp, blockData, pow.hash, pow.nonce);
-};
-
-
-var calculateHashForBlock = (block) => {
-  return calculateHash(block.index, block.previousHash, block.timestamp, block.data, block.nonce);
-};
-
-var calculateHash = (index, previousHash, timestamp, data, nonce) => {
-  return CryptoJS.SHA256(index + previousHash + timestamp + data + nonce).toString();
 };
 
 var addBlock = (newBlock) => {
@@ -425,7 +462,6 @@ var isValidChain = (blockchainToValidate) => {
   return true;
 };
 
-var myAccount = new Account(process.env.ADDRESS, process.env.BALANCE);
 var getLatestBlock = () => blockchain[blockchain.length - 1];
 var queryChainLengthMsg = () => ({'type': MessageType.QUERY_LATEST});
 var queryAllMsg = () => ({'type': MessageType.QUERY_ALL});
@@ -442,7 +478,7 @@ var responseLatestMsg = () => ({
 var processEachTxn = (block) => {
   var txns = block.data.txns;
   txns.forEach((hash) => {
-    if (!transactions[hash]) {
+    if (!Transaction.list[hash]) {
       console.log('transaction missing: ' + hash);
       broadcast(queryTxn(hash));
     } else {
@@ -453,16 +489,16 @@ var processEachTxn = (block) => {
 
 var handleTxnsQuery = (ws, msg) => {
   if (msg && msg.data) {
-    if (transactions[msg.data]) {
+    if (Transaction.list[msg.data]) {
       write(ws, {
         type: MessageType.RESPONSE_TXNS,
-        data: JSON.stringify({ hash: transactions[msg.data] })
+        data: JSON.stringify({ hash: Transaction.list[msg.data] })
       });
     }
   } else {
     write(ws, {
       type: MessageType.RESPONSE_TXNS,
-      data: JSON.stringify(transactions)
+      data: JSON.stringify(Transaction.list)
     });
   }
 };
