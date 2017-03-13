@@ -146,7 +146,13 @@ var readyToMineBlock = () => {
 };
 
 var broadcastTxn = (txnHash) => {
-  broadcast({ 'type': MessageType.NEW_TXNS, 'data': JSON.stringify({ txnHash: Transaction.list[txnHash] }) });
+  var txns = {};
+  if (typeof txnHash === 'string') {
+    txns[txnHash] = Transaction.list[txnHash];
+  } else {
+    txns[txnHash.hash] = txnHash;
+  }
+  broadcast({ 'type': MessageType.NEW_TXNS, 'data': JSON.stringify(txns)});
 };
 
 var generateCoinbaseTxn = () => {
@@ -194,6 +200,11 @@ var addTransaction = (txn, alreadyMined) => {
           saveTransaction(transaction);
           console.log('transaction added: ' + JSON.stringify(transaction));
           stageTransaction(transaction);
+
+          if (!Transaction.isApplied(txn)) {
+            updateAccount(txn);
+            Transaction.Apply(txn);
+          }
           if (readyToMineBlock()) {
             console.log('enough transactions received');
             mineBlock(generateBlockData());
@@ -201,10 +212,18 @@ var addTransaction = (txn, alreadyMined) => {
             console.log(requiredTxnsPerBlock - Transaction.pending.length + ' more transactions required for mining');
           }
         } else {
+          broadcastTxn(transaction);
           }
+      } else {
+        console.log('Transaction discarded: Not valid');
       }
     } else {
       saveTransaction(transaction);
+
+      if (!Transaction.isApplied(txn)) {
+        updateAccount(txn);
+        Transaction.Apply(txn);
+      }
       broadcastTxn(transaction.hash);
       console.log('transaction added: ' + JSON.stringify(transaction));
     }
@@ -213,11 +232,6 @@ var addTransaction = (txn, alreadyMined) => {
     if (alreadyMined) {
       unstageTransaction(txn.hash);
     }
-  }
-
-  if (!Transaction.isApplied(txn)) {
-    updateAccount(txn);
-    Transaction.Apply(txn);
   }
 };
 
